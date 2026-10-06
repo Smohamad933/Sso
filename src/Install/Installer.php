@@ -21,6 +21,14 @@ final class Installer
     /**
      * @return array<int, array{name: string, ok: bool, message: string}>
      */
+    /**
+     * فهرستِ پیش‌نیازها برای نمایش در نصاب.
+     *
+     * هر مورد شامل name / ok / message و در صورت نیاز detail و hint است؛
+     * detail توضیح می‌دهد دقیقاً چه چیزی بررسی شد و hint راهِ رفعِ آن.
+     *
+     * @return array<int, array<string, mixed>>
+     */
     public static function requirements(): array
     {
         $checks = [];
@@ -28,46 +36,147 @@ final class Installer
         $checks[] = [
             'name' => 'نسخه PHP',
             'ok' => PHP_VERSION_ID >= 80100,
-            'message' => PHP_VERSION . ' (حداقل ۸.۱ توصیه می‌شود)',
+            'message' => PHP_VERSION . ' (حداقل ۸.۱)',
+            'detail' => PHP_VERSION_ID < 80100 ? 'نسخه‌ی فعلی: ' . PHP_VERSION : '',
+            'hint' => PHP_VERSION_ID < 80100 ? 'PHP را به نسخه‌ی ۸.۱ یا بالاتر ارتقا دهید.' : '',
         ];
+
         foreach (['pdo', 'json', 'hash', 'session', 'random'] as $ext) {
+            $loaded = extension_loaded($ext);
             $checks[] = [
                 'name' => 'افزونه ' . $ext,
-                'ok' => extension_loaded($ext),
-                'message' => extension_loaded($ext) ? 'نصب شده' : 'نصب نیست',
+                'ok' => $loaded,
+                'message' => $loaded ? 'نصب شده' : 'نصب نیست',
+                'detail' => '',
+                'hint' => $loaded ? '' : 'در php.ini خطِ extension=' . $ext . ' را فعال کنید.',
             ];
         }
+
+        $mysql = extension_loaded('pdo_mysql');
+        $sqlite = extension_loaded('pdo_sqlite');
+        $drivers = class_exists('PDO') ? \PDO::getAvailableDrivers() : [];
+        $ini = php_ini_loaded_file();
         $checks[] = [
             'name' => 'افزونه pdo_mysql یا pdo_sqlite',
-            'ok' => extension_loaded('pdo_mysql') || extension_loaded('pdo_sqlite'),
-            'message' => extension_loaded('pdo_mysql') ? 'pdo_mysql در دسترس است'
-                : (extension_loaded('pdo_sqlite') ? 'فقط pdo_sqlite در دسترس است' : 'هیچ‌کدام نصب نیست'),
+            'ok' => $mysql || $sqlite,
+            'message' => $mysql ? 'pdo_mysql در دسترس است'
+                : ($sqlite ? 'فقط pdo_sqlite — برای MySQL باید pdo_mysql فعال شود' : 'هیچ‌کدام نصب نیست'),
+            'detail' => 'درایورهای PDO: ' . ($drivers === [] ? 'هیچ' : implode(', ', $drivers)),
+            'hint' => ($mysql || $sqlite) ? '' : 'در php.ini خطِ extension=pdo_mysql را از حالت کامنت خارج کنید'
+                . ($ini !== false ? ' (فایل: ' . $ini . ')' : '') . ' و IIS را بازیابی کنید.',
         ];
-        $checks[] = [
-            'name' => 'دسترسی نوشتن در storage',
-            'ok' => self::ensureDirectory(SSO_STORAGE),
-            'message' => self::ensureDirectory(SSO_STORAGE) ? 'قابل نوشتن' : 'قابل نوشتن نیست: ' . SSO_STORAGE,
-        ];
-        $checks[] = [
-            'name' => 'دسترسی نوشتن در config',
-            'ok' => self::ensureDirectory(dirname(SSO_CONFIG_FILE)),
-            'message' => self::ensureDirectory(dirname(SSO_CONFIG_FILE)) ? 'قابل نوشتن' : 'قابل نوشتن نیست',
-        ];
+
+        // بررسیِ پوشه‌ها با تستِ نوشتنِ واقعی (روی IIS/ویندوز is_writable قابل اعتماد نیست)
+        foreach (self::ensureStorageDirectories() as $status) {
+            $label = str_replace(str_replace('\\', '/', SSO_ROOT) . '/', '', str_replace('\\', '/', $status['path']));
+            $hint = '';
+            if (!$status['ok']) {
+                $hint = $status['reason'];
+                if (PHP_OS_FAMILY === 'Windows') {
+                    $hint .= ' — در IIS دسترسیِ Modify را برای حسابِ استخرِ برنامه '
+                        . '(IIS AppPool\\<نام-استخر>) روی این پوشه بدهید.';
+                } else {
+                    $hint .= ' — مالکیت/دسترسیِ پوشه را برای کاربرِ وب‌سرور بررسی کنید.';
+                }
+            }
+            $checks[] = [
+                'name' => 'نوشتن در ' . $label,
+                'ok' => $status['ok'],
+                'message' => $status['ok'] ? 'قابل نوشتن' : 'قابل نوشتن نیست',
+                'detail' => $status['path'],
+                'hint' => $hint,
+            ];
+        }
 
         return $checks;
     }
 
     public static function ensureDirectory(string $path): bool
     {
-        if (!is_dir($path)) {
-            @mkdir($path, 0775, true);
-        }
-        return is_dir($path) && is_writable($path);
+        return self::directoryStatus($path)['ok'];
     }
 
     /**
+     * وضعیت واقعیِ یک پوشه: ساختن در صورت نبود، و سپس یک تستِ نوشتنِ عملی.
+     *
+     * روی ویندوز/IIS تکیه بر is_writable() قابل اعتماد نیست: مجوزها بر پایه‌ی
+     * ACL است و این تابع فقط ویژگیِ readonly را می‌بیند. بنابراین یک فایلِ
+     * موقت واقعاً نوشته و پاک می‌شود تا نتیجه قطعی باشد.
+     *
+     * @return array{ok: bool, path: string, reason: string}
+     */
+    public static function directoryStatus(string $path): array
+    {
+        $result = ['ok' => false, 'path' => $path, 'reason' => ''];
+
+        if (!is_dir($path)) {
+            if (!@mkdir($path, 0775, true)) {
+                $error = error_get_last();
+                $result['reason'] = 'پوشه وجود ندارد و ساخته نشد'
+                    . ($error !== null ? ' (' . $error['message'] . ')' : '');
+                return $result;
+            }
+        }
+
+        if (!is_dir($path)) {
+            $result['reason'] = 'مسیر یک پوشه نیست: ' . $path;
+            return $result;
+        }
+
+        $probe = rtrim($path, '/\\') . DIRECTORY_SEPARATOR . '.sso_probe_' . bin2hex(random_bytes(4));
+        $handle = @fopen($probe, 'wb');
+        if ($handle === false) {
+            $error = error_get_last();
+            $result['reason'] = 'نوشتن در پوشه انجام نشد'
+                . ($error !== null ? ' (' . $error['message'] . ')' : '')
+                . ' — مسیر: ' . $path;
+            return $result;
+        }
+        fwrite($handle, 'probe');
+        fclose($handle);
+        $written = @file_get_contents($probe) === 'probe';
+        @unlink($probe);
+
+        if (!$written) {
+            $result['reason'] = 'فایل آزمایشی نوشته شد اما خوانده نشد — مسیر: ' . $path;
+            return $result;
+        }
+
+        $result['ok'] = true;
+        return $result;
+    }
+
+    /**
+     * پوشه‌هایی که سامانه برای کار نیاز دارد.
+     *
      * @return array<int, string>
      */
+    public static function storageDirectories(): array
+    {
+        return [
+            SSO_STORAGE,
+            SSO_STORAGE . '/logs',
+            SSO_STORAGE . '/cache',
+            SSO_STORAGE . '/sessions',
+            SSO_STORAGE . '/database',
+            dirname(SSO_CONFIG_FILE),
+        ];
+    }
+
+    /**
+     * ساخت و بررسیِ همه‌ی پوشه‌های مورد نیاز.
+     *
+     * @return array<int, array{ok: bool, path: string, reason: string}>
+     */
+    public static function ensureStorageDirectories(): array
+    {
+        $out = [];
+        foreach (self::storageDirectories() as $dir) {
+            $out[] = self::directoryStatus($dir);
+        }
+        return $out;
+    }
+
     public static function missingRequirements(): array
     {
         $missing = [];

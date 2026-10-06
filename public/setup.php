@@ -214,6 +214,16 @@ $steps = [
                     : '<span class="badge badge-danger">خطا</span>' ?>
                     <span class="muted small"><?= e($check['message']) ?></span></span>
             </div>
+            <?php if (!$check['ok']): ?>
+                <div class="check-detail">
+                    <?php if (!empty($check['detail'])): ?>
+                        <div><strong>جزئیات:</strong> <code dir="ltr"><?= e((string) ($check['detail'] ?? '')) ?></code></div>
+                    <?php endif; ?>
+                    <?php if (!empty($check['hint'])): ?>
+                        <div><strong>راه‌حل:</strong> <?= e((string) ($check['hint'] ?? '')) ?></div>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
         <?php endforeach; ?>
 
         <div style="margin-top:22px">
@@ -225,6 +235,13 @@ $steps = [
             <?php else: ?>
                 <div class="flash flash-error">برخی پیش‌نیازها برآورده نشده‌اند؛ لطفاً آن‌ها را رفع کنید و صفحه را دوباره بارگذاری کنید.</div>
             <?php endif; ?>
+                <div class="flash flash-info">
+                    <strong>برای دیدنِ دلیلِ دقیق در سرور، از خط فرمان اجرا کنید:</strong>
+                    <div><code dir="ltr">php tools/check-requirements.php</code></div>
+                    <div class="small">و برای تست اتصال دیتابیس:</div>
+                    <div><code dir="ltr">php tools/check-requirements.php --host=127.0.0.1 --port=3306 --database=sso --username=root --password=***</code></div>
+                    <div class="small">پس از هر تغییر در php.ini، استخرِ برنامه (Application Pool) را در IIS بازیابی کنید.</div>
+                </div>
         </div>
 
     <?php elseif ($step === '2'): ?>

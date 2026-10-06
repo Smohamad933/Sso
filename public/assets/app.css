@@ -257,6 +257,22 @@ pre { margin: 0; }
 .step.is-active { background: var(--brand); color: #fff; }
 .step.is-done { background: var(--success-soft); color: var(--success); }
 .check-item { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px dashed var(--line); font-size: 13.5px; }
+.check-detail {
+    margin: -4px 0 12px;
+    padding: 9px 12px;
+    border-right: 3px solid var(--danger, #c0392b);
+    background: rgba(192, 57, 43, .06);
+    border-radius: 0 6px 6px 0;
+    font-size: 12.5px;
+    line-height: 1.9;
+    overflow-wrap: anywhere;
+}
+.check-detail code {
+    background: rgba(127, 127, 127, .14);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 12px;
+}
 
 /* ---------------------------------------------------------------- responsive */
 

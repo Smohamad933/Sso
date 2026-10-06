@@ -531,6 +531,18 @@ async function main() {
     const step1 = await admin(setupRuntime, '/setup.php', { query: { step: '1' } });
     check('مرحله ۱: پیش‌نیازها', step1.body.includes('بررسی پیش‌نیازها'));
 
+    // در این محیط همه‌ی پیش‌نیازها باید برقرار باشند؛ در غیر این صورت
+    // دکمه‌ی «مرحله‌ی بعد» نمایش داده نمی‌شود.
+    // (استایلِ صفحه درون خودِ HTML درج شده، بنابراین پیش از بررسی حذف می‌شود)
+    const step1Html = step1.body.replace(/<style[\s\S]*?<\/style>/g, '');
+    check('همه‌ی پیش‌نیازها در محیط تست برقرارند', step1Html.includes('مرحله‌ی بعد'),
+      step1Html.slice(0, 1200));
+    check('هیچ مورد خطاداری در فهرست نیست', !step1Html.includes('<span class="badge badge-danger">'),
+      step1Html.slice(0, 1200));
+    check('بررسیِ نوشتن در storage و config نمایش داده شده',
+      step1Html.includes('نوشتن در storage') && step1Html.includes('نوشتن در config'),
+      step1Html.slice(0, 1200));
+
     const step2 = await admin(setupRuntime, '/setup.php', {
       method: 'POST',
       form: { step: '2', driver: 'sqlite', path: '/sso/storage/database/setup.sqlite' },
@@ -979,6 +991,20 @@ async function main() {
     check('مدیر جدید می‌تواند وارد پنل شود',
       headerOf(login, 'Location')?.includes('/admin/index.php') === true, JSON.stringify(login.headers));
 
+
+    // ---- ابزار عیب‌یابیِ پیش‌نیازها ----
+    const diagOut = await cliInstallRuntime.run(php(['<?php', '$GLOBALS[\'argv\'] = [\'check-requirements.php\'];', 'require \'/sso/tools/check-requirements.php\';']));
+    check('check-requirements.php گزارش چاپ می‌کند', diagOut.includes('گزارش پیش‌نیازها'),
+      JSON.stringify(diagOut.slice(0, 400)));
+    check('گزارش شامل نسخه PHP است', diagOut.includes('نسخه PHP'), JSON.stringify(diagOut.slice(0, 400)));
+    check('گزارش شامل بررسیِ پوشه storage است', diagOut.includes('نوشتن در storage'),
+      JSON.stringify(diagOut.slice(0, 600)));
+    check('گزارش بدون خطای داخلی تولید شد', !diagOut.includes('Fatal error'),
+      JSON.stringify(diagOut.slice(0, 600)));
+    check('هیچ پیش‌نیازی در محیط تست خطا ندارد', !/\[خطا\]/.test(diagOut),
+      JSON.stringify(diagOut.slice(-1200)));
+    check('جمع‌بندیِ گزارش چاپ شد', diagOut.includes('همه‌ی پیش‌نیازها برآورده شده‌اند'),
+      JSON.stringify(diagOut.slice(-400)));
   }
 
 
