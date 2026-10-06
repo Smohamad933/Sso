@@ -1,0 +1,16 @@
+# خطوط جدیدِ فایل‌های متنی در مخزن و در بایگانی (git archive) همیشه LF باشد.
+# این کار باعث می‌شود خروجی روی IIS/Apache/Nginx و Linux/Windows یکسان باشد.
+* text=auto eol=lf
+
+# بسته‌ی آماده‌ی سورس نباید درون بایگانیِ بعدی برود
+sso-source.zip export-ignore
+sso-source.zip -diff
+
+# فایل‌های دودویی
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.zip   binary
