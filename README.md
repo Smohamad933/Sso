@@ -10,6 +10,19 @@
 
 ---
 
+## دانلود سورس
+
+یک بسته‌ی آماده از کل سورس (بدون `.git` و وابستگی‌های توسعه) به صورت یک فایل زیپ در خودِ مخزن قرار دارد:
+
+**<https://raw.githubusercontent.com/Smohamad933/Sso/arena/fb346cbb-sso/sso-source.zip>**
+
+```
+curl -L -o sso.zip https://raw.githubusercontent.com/Smohamad933/Sso/arena/fb346cbb-sso/sso-source.zip
+```
+
+> زیپ شامل `node_modules/` و فایل `config/config.php` نیست (دومی حاوی رمز دیتابیس شماست).
+> پس از باز کردنِ زیپ، مراحلِ [نصب](#نصب) را انجام دهید.
+
 ## فهرست
 
 - [شروع سریع](#شروع-سریع)
