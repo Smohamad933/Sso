@@ -1,0 +1,16 @@
+{
+  "name": "sso-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "تست‌های یکپارچه‌ی سامانه احراز هویت (با اجرای PHP واقعی از طریق php-wasm)",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/run.mjs"
+  },
+  "dependencies": {
+    "php-wasm": "^0.2.0",
+    "php-wasm-mbstring": "^0.2.0",
+    "php-wasm-openssl": "^0.2.0",
+    "php-wasm-sqlite": "^0.2.0"
+  }
+}

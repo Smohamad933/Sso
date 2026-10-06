@@ -1,0 +1,24 @@
+# تنظیمات محلی (حاوی رمز دیتابیس) — هرگز commit نشود
+/config/config.php
+
+# داده‌های زمان اجرا
+/storage/logs/*
+!/storage/logs/.gitkeep
+/storage/sessions/*
+!/storage/sessions/.gitkeep
+/storage/cache/*
+!/storage/cache/.gitkeep
+/storage/database/*
+!/storage/database/.gitkeep
+/storage/installed.lock
+
+# وابستگی‌های توسعه
+node_modules/
+vendor/
+
+# فایل‌های ویرایشگر و سیستم‌عامل
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
