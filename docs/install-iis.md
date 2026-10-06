@@ -139,7 +139,18 @@ foreach ($p in $paths) {
 
 ### ۵.۲ ثبت PHP در IIS
 
-در **IIS Manager** → **Handler Mappings** → **Add Module Mapping**:
+فایل `public/web.config` همراه پروژه یک بلوکِ `<handlers>` دارد که PHP را از
+طریق FastCGI ثبت می‌کند، بنابراین در بسیاری از موارد نیازی به کار دستی نیست.
+
+دو حالت وجود دارد:
+
+- **اگر PHP در `C:\php\php-cgi.exe` نصب است یا آن را اصلاح می‌کنید:** همان بلوک
+  را نگه دارید و فقط مقدار `scriptProcessor` را با مسیر واقعی `php-cgi.exe`
+  جایگزین کنید. بقیه‌ی موارد را رها کنید.
+- **اگر PHP در سطح سرور ثبت شده** (IIS Manager → سطح سرور → Handler Mappings):
+  بلوک `<handlers>` را از `web.config` **حذف** کنید تا تداخل ایجاد نشود.
+
+ثبت دستی در IIS Manager (در صورت نیاز):
 
 | فیلد | مقدار |
 |---|---|
@@ -156,7 +167,7 @@ foreach ($p in $paths) {
 
 ### ۵.۴ بازنویسی URL
 
-فایل `public/web.config` که همراه پروژه است این کار را انجام می‌دهد. اگر آن را تغییر داده‌اید، مطمئن شوید شامل این قاعده باشد:
+فایل `public/web.config` که همراه پروژه است این کار را انجام می‌دهد (قانونِ `SsoApiRewrite`). اگر آن را تغییر داده‌اید، مطمئن شوید شامل این قاعده باشد:
 
 ```xml
 <rule name="SsoApiRewrite" stopProcessing="true">
@@ -173,7 +184,16 @@ foreach ($p in $paths) {
 
 ### ۵.۵ مسدود کردن مسیرهای حساس
 
-`public/web.config` دسترسی مستقیم به `config/`، `storage/`، `src/`، `database/`، `tools/` و `tests/` را رد می‌کند. اگر در محیطی هستید که `web.config` نادیده گرفته می‌شود، این مسیرها را بیرون از ریشه‌ی وب قرار دهید (توصیه‌ی بخش ۳).
+`public/web.config` دو لایه برای این کار دارد:
+
+1. قانونِ بازنویسیِ `SsoBlockInternal` که درخواست‌های `src/`، `config/`، `storage/`، `database/`، `tests/`، `tools/`، `docs/` و چند نامِ رایجِ دیگر را با پاسخ ۴۰۴ رد می‌کند (۴۰۴ نه ۴۰۳، تا وجود مسیر معلوم نشود).
+2. بخش `<security><requestFiltering>` که همان پوشه‌ها را در `<hiddenSegments>` و پسوندهای `.sql`، `.sqlite`، `.json`، `.lock`، `.log`، `.md` و `.env` را در `<fileExtensions>` مسدود می‌کند.
+
+> توجه: سامانه هیچ فایل JSON ایستا سرو نمی‌کند (پاسخ‌های JSON را PHP تولید می‌کند)،
+> بنابراین مسدود کردن `.json` بی‌خطر است. اگر بعداً فایلی مانند
+> `public/manifest.json` اضافه کردید، آن خط را از `web.config` حذف کنید.
+
+اگر در محیطی هستید که `web.config` نادیده گرفته می‌شود، این مسیرها را بیرون از ریشه‌ی وب قرار دهید (توصیه‌ی بخش ۳).
 
 ### ۵.۶ HTTPS
 

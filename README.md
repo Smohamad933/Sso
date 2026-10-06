@@ -23,6 +23,16 @@ curl -L -o sso.zip https://raw.githubusercontent.com/Smohamad933/Sso/arena/fb346
 > زیپ شامل `node_modules/` و فایل `config/config.php` نیست (دومی حاوی رمز دیتابیس شماست).
 > پس از باز کردنِ زیپ، مراحلِ [نصب](#نصب) را انجام دهید.
 
+برای بازسازیِ بسته پس از هر تغییر:
+
+```bash
+bash tools/build-source-zip.sh
+```
+
+این اسکریپت با `git archive` از آخرین commit بسته می‌سازد؛ بنابراین محتوا دقیقاً
+همان چیزی است که در مخزن ثبت شده. خطوطِ جدیدِ فایل‌های متنی طبق `.gitattributes`
+همیشه از نوع LF هستند تا روی IIS/Apache/Nginx یکسان باشد.
+
 ## فهرست
 
 - [شروع سریع](#شروع-سریع)
