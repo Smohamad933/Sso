@@ -79,6 +79,8 @@ export async function createRuntime() {
 async function dispatch(runtime, script, spec) {
   const payload = JSON.stringify(spec);
   const code = `<?php
+// در حالت تست، استثناهای کنترل‌نشده نباید باعث exit شوند (runtime را از بین می‌برد)
+putenv('SSO_HTTP_TEST=1');
 $GLOBALS['__TEST_REQUEST'] = json_decode(${JSON.stringify(payload)}, true);
 require '${WASM_ROOT}/${script}';
 `;
@@ -102,6 +104,8 @@ export async function installProject(runtime, options = {}) {
   const result = await dispatch(runtime, 'tests/php/install.php', {
     admin_email: adminEmail,
     admin_password: adminPassword,
+    base_url: options.baseUrl ?? 'http://localhost',
+    extra_config: options.extraConfig ?? null,
   });
 
   const payload = result;
@@ -120,6 +124,13 @@ export async function installProject(runtime, options = {}) {
 
 export async function lintProject(runtime) {
   return await dispatch(runtime, 'tests/php/lint.php', {});
+}
+
+/**
+ * بررسی قواعد معماری (نبودِ توابع زمانِ SQL، نبودِ upsert، نبودِ exit در مسیر وب و ...).
+ */
+export async function architectureCheck(runtime) {
+  return await dispatch(runtime, 'tests/php/architecture.php', {});
 }
 
 /**

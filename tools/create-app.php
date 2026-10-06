@@ -39,7 +39,9 @@ try {
     echo '  API Key:    ' . $result['api_key'] . "\n";
     echo '  API Secret: ' . $result['api_secret'] . "\n";
     echo "\nاین مقادیر فقط یک‌بار نمایش داده می‌شوند.\n";
-    exit(0);
+    // return به‌جای exit: در حالت عادیِ CLI تفاوتی ندارد (پایان اسکریپت با کد ۰)،
+    // اما امکان فراخوانیِ برنامه‌ای (تست یکپارچه) را هم فراهم می‌کند.
+    return;
 } catch (\Throwable $e) {
     fwrite(STDERR, 'خطا: ' . $e->getMessage() . "\n");
     exit(1);

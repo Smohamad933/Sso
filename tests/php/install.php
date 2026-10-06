@@ -38,6 +38,32 @@ if (is_file($sqliteFile)) {
 try {
     $baseUrl = (string) ($spec['base_url'] ?? 'http://localhost');
     Installer::writeConfig($db, 'base64:' . base64_encode(random_bytes(32)), 'SSO Test', $baseUrl);
+
+    // اعمال تنظیماتِ اضافیِ درخواستی تست (مثلاً admin_ip_whitelist) پیش از بالا آمدن برنامه
+    $extra = $spec['extra_config'] ?? null;
+    if (is_array($extra) && $extra !== []) {
+        /** @var array<string, mixed> $config */
+        $config = require SSO_CONFIG_FILE;
+        foreach ($extra as $key => $value) {
+            $segments = explode('.', (string) $key);
+            $cursor = &$config;
+            foreach ($segments as $index => $segment) {
+                if ($index === count($segments) - 1) {
+                    $cursor[$segment] = $value;
+                    break;
+                }
+                if (!isset($cursor[$segment]) || !is_array($cursor[$segment])) {
+                    $cursor[$segment] = [];
+                }
+                $cursor = &$cursor[$segment];
+            }
+            unset($cursor);
+        }
+        file_put_contents(
+            SSO_CONFIG_FILE,
+            "<?php\n\ndeclare(strict_types=1);\n\nreturn " . var_export($config, true) . ";\n"
+        );
+    }
     App::boot();
     Installer::runSchema(\sso_db());
 
