@@ -584,6 +584,97 @@ async function main() {
 
     const health = await api(setupRuntime, 'GET', '/v1/health');
     eq('بعد از نصب وب، API بالاست', health.status, 200);
+
+    // ==================================================================
+    // ارسالِ فرم هرگز نباید «بی‌سروصدا دور ریخته» شود.
+    // این سه مورد مستقیماً از تجربه‌ی واقعیِ کاربر روی IIS می‌آیند:
+    // فرم پر می‌شد، دکمه زده می‌شد، فیلدها سفید می‌شدند و هیچ پیامی نبود.
+    // ==================================================================
+    const stripCss = (html) => (html || '').replace(/<style[\s\S]*?<\/style>/g, '');
+
+    // ۱) اگر پیش‌نیازی در لحظه‌ی ارسال برقرار نباشد، باید دلیل را بگوید.
+    {
+      const rt = await createRuntime();
+      await admin(rt, '/setup.php', {
+        method: 'POST',
+        form: { step: '2', driver: 'sqlite', path: '/sso/storage/database/setup.sqlite' },
+      });
+      await rt.php.run("<?php chmod('/sso/config', 0500);");
+      const res = await admin(rt, '/setup.php', {
+        method: 'POST',
+        form: {
+          step: '3',
+          driver: 'sqlite',
+          path: '/sso/storage/database/setup.sqlite',
+          email: 'admin@example.com',
+          password: 'Smosh1387',
+          password_confirmation: 'Smosh1387',
+          app_name: 'x',
+          base_url: 'http://localhost',
+        },
+      });
+      const html = stripCss(res.body);
+      check('ارسالِ فرم با پیش‌نیازِ خراب بی‌صدا دور ریخته نمی‌شود',
+        html.includes('فرم شما اجرا نشد'), html.slice(0, 800));
+      check('نامِ پیش‌نیازِ خراب در پیام ذکر می‌شود',
+        html.includes('نوشتن در config'), html.slice(0, 800));
+    }
+
+    // ۲) مقادیرِ تایپ‌شده باید بعد از خطا حفظ شوند (فیلدها سفید نشوند).
+    {
+      const rt = await createRuntime();
+      await admin(rt, '/setup.php', {
+        method: 'POST',
+        form: { step: '2', driver: 'sqlite', path: '/sso/storage/database/setup.sqlite' },
+      });
+      const res = await admin(rt, '/setup.php', {
+        method: 'POST',
+        form: {
+          step: '3',
+          driver: 'sqlite',
+          path: '/sso/storage/database/setup.sqlite',
+          email: 'bad-email',
+          password: 'Smosh1387',
+          password_confirmation: 'Smosh1387',
+          app_name: 'عنوان تست',
+          base_url: 'http://localhost',
+        },
+      });
+      const html = stripCss(res.body);
+      check('خطای ایمیل نمایش داده می‌شود', html.includes('ایمیل معتبر وارد کنید'), html.slice(0, 600));
+      check('مقدارِ تایپ‌شده‌ی ایمیل بعد از خطا حفظ می‌شود',
+        html.includes('value="bad-email"'), html.slice(0, 600));
+      check('مقدارِ تایپ‌شده‌ی عنوان بعد از خطا حفظ می‌شود',
+        html.includes('value="عنوان تست"'), html.slice(0, 600));
+    }
+
+    // ۳) در درخواستِ POST، مقدارِ step از بدنه معتبرتر از رشته‌ی پرس‌وجو است.
+    //    در غیر این صورت ?step=2 در نشانی باعث می‌شد ارسالِ مرحله‌ی ۳ دوباره
+    //    به عنوانِ مرحله‌ی ۲ پردازش شود و کاربر فکر کند «هیچ اتفاقی نیفتاد».
+    {
+      const rt = await createRuntime();
+      await admin(rt, '/setup.php', {
+        method: 'POST',
+        form: { step: '2', driver: 'sqlite', path: '/sso/storage/database/setup.sqlite' },
+      });
+      const res = await admin(rt, '/setup.php', {
+        method: 'POST',
+        query: { step: '2' },
+        form: {
+          step: '3',
+          driver: 'sqlite',
+          path: '/sso/storage/database/setup.sqlite',
+          email: 'admin@example.com',
+          password: 'Smosh1387',
+          password_confirmation: 'Smosh1387',
+          app_name: 'x',
+          base_url: 'http://localhost',
+        },
+      });
+      const html = stripCss(res.body);
+      check('step در POST از بدنه خوانده می‌شود نه رشته‌ی پرس‌وجو',
+        html.includes('نصب با موفقیت'), html.slice(0, 800));
+    }
   }
 
 

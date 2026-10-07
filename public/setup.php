@@ -30,7 +30,13 @@ if (Installer::isInstalled() && !isset($_GET['force'])) {
 }
 
 $lockFile = SSO_INSTALL_LOCK;
-$step = (string) ($_GET['step'] ?? $_POST['step'] ?? '1');
+// در درخواست‌های POST، مقدارِ step از بدنه‌ی فرم معتبرتر از رشته‌ی پرس‌وجو است؛
+// در غیر این صورت اگر نشانیِ مرورگر ?step=2 را همراه داشته باشد، ارسالِ مرحله‌ی ۳
+// بی‌سر و صدا به عنوانِ مرحله‌ی ۲ پردازش می‌شود و کاربر فکر می‌کند «هیچ اتفاقی نیفتاد».
+$isPost = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST');
+$step = (string) ($isPost
+    ? ($_POST['step'] ?? $_GET['step'] ?? '1')
+    : ($_GET['step'] ?? '1'));
 $errors = [];
 $notices = [];
 $result = null;
@@ -38,6 +44,19 @@ $result = null;
 $requirements = Installer::requirements();
 $canContinue = Installer::missingRequirements() === [];
 if (!$canContinue && $step !== '1') {
+    // باگِ واقعی: قبلاً این‌جا فقط $step را به ۱ برمی‌گرداندیم. چون پردازشِ POST
+    // پایین‌تر فقط برای مرحله‌ی ۲ و ۳ اجرا می‌شود، کلِ فرمِ کاربر بی‌سر و صدا
+    // دور ریخته می‌شد: نه نصبی انجام می‌شد، نه خطایی نشان داده می‌شد و نه
+    // مقادیری که تایپ کرده بود حفظ می‌شد — دقیقاً «هیچ اتفاقی نمی‌افتد».
+    if ($isPost) {
+        $names = [];
+        foreach (Installer::missingRequirements() as $missing) {
+            $names[] = explode(': ', (string) $missing)[0];
+        }
+        $errors['general'] = 'فرم شما اجرا نشد، چون این پیش‌نیاز(ها) دیگر برقرار نیست: '
+            . implode('، ', $names)
+            . '. موردِ خطادار را در فهرستِ پایین ببینید و پس از رفع آن، دوباره ارسال کنید.';
+    }
     $step = '1';
 }
 
@@ -65,6 +84,23 @@ $dbValues = [
     'path' => SSO_STORAGE . '/database/sso.sqlite',
 ];
 $adminValues = ['email' => '', 'full_name' => '', 'app_name' => 'سامانه احراز هویت یکپارچه', 'base_url' => $autoBaseUrl, 'demo_app' => '1'];
+
+// مقادیر ارسالی را پیش از هر تصمیمی درباره‌ی مرحله نگه می‌داریم، تا در هیچ
+// حالتی — حتی وقتی فرم به مرحله‌ی ۱ بازگردانده می‌شود — فیلدها خالی نشوند.
+// (قبلاً این مقادیر فقط داخل شاخه‌ی مرحله‌ی ۳ خوانده می‌شد، بنابراین با هر
+// بازگشتی فرم کاملاً سفید می‌شد و کاربر نمی‌فهمید چه اتفاقی افتاده است.)
+if ($isPost) {
+    foreach (['driver', 'host', 'port', 'database', 'username', 'password', 'charset', 'path'] as $key) {
+        if (isset($_POST[$key])) {
+            $dbValues[$key] = is_int($_POST[$key]) ? (int) $_POST[$key] : (string) $_POST[$key];
+        }
+    }
+    $adminValues['email'] = Str::normalizeEmail((string) ($_POST['email'] ?? ''));
+    $adminValues['full_name'] = Str::trim((string) ($_POST['full_name'] ?? ''));
+    $adminValues['app_name'] = Str::trim((string) ($_POST['app_name'] ?? '')) ?: 'سامانه احراز هویت یکپارچه';
+    $adminValues['base_url'] = Str::trim((string) ($_POST['base_url'] ?? '')) ?: $autoBaseUrl;
+    $adminValues['demo_app'] = isset($_POST['demo_app']) ? '1' : '0';
+}
 
 // ------------------------------------------------------------------ پردازش
 
@@ -159,7 +195,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 $step = '4';
             } catch (\Throwable $e) {
                 \Sso\Support\Log::critical('setup: ' . $e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
-                $errors['general'] = 'نصب ناموفق بود: ' . $e->getMessage();
+                $errors['general'] = 'نصب ناموفق بود: ' . $e->getMessage()
+                    . ' — جزئیاتِ کامل در پوشه‌ی ' . SSO_STORAGE . '/logs ثبت شد.';
             }
         }
     }
