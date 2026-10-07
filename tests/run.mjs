@@ -5,6 +5,8 @@
  *   cd tests && npm install && node run.mjs
  */
 
+import { readFileSync } from 'node:fs';
+
 import {
   createRuntime,
   installProject,
@@ -542,6 +544,20 @@ async function main() {
     check('بررسیِ نوشتن در storage و config نمایش داده شده',
       step1Html.includes('نوشتن در storage') && step1Html.includes('نوشتن در config'),
       step1Html.slice(0, 1200));
+
+    // نگهبانِ یک باگ واقعی: بررسیِ پیش‌نیازها باید بر پایه‌ی «توانایی» باشد،
+    // نه نامِ افزونه. افزونه‌ی random فقط از PHP 8.2 وجود دارد، پس روی PHP 8.1
+    // بررسیِ نام همیشه خطا می‌داد و کاربر راهی برای رفعش نداشت.
+    // توضیحات را حذف می‌کنیم تا فقط کد بررسی شود
+    const installerSrc = readFileSync(new URL('../src/Install/Installer.php', import.meta.url), 'utf8')
+      .split('\n')
+      .map((line) => line.replace(/\/\/.*$/, '').replace(/\/\*[\s\S]*?\*\//g, ''))
+      .join('\n');
+    for (const ext of ['random', 'json', 'hash', 'session']) {
+      check(`وضعیتِ ${ext} بر پایه‌ی نامِ افزونه تعیین نمی‌شود`,
+        !installerSrc.includes(`extension_loaded('${ext}')`));
+    }
+    check('بررسیِ توانایی‌ها تعریف شده است', installerSrc.includes('$capabilities = ['));
 
     const step2 = await admin(setupRuntime, '/setup.php', {
       method: 'POST',

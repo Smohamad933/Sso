@@ -41,21 +41,56 @@ final class Installer
             'hint' => PHP_VERSION_ID < 80100 ? 'PHP را به نسخه‌ی ۸.۱ یا بالاتر ارتقا دهید.' : '',
         ];
 
-        foreach (['pdo', 'json', 'hash', 'session', 'random'] as $ext) {
-            $loaded = extension_loaded($ext);
+        $ini = php_ini_loaded_file();
+
+        // بررسی بر اساسِ «تواناییِ مورد نیاز»، نه نامِ افزونه.
+        //
+        // دلیل (یک باگ واقعی که در نسخه‌ی قبل وجود داشت):
+        // افزونه‌ی random فقط از PHP 8.2 وجود دارد. روی PHP 8.1 تابع
+        // extension_loaded('random') همیشه false برمی‌گرداند، اما تابع
+        // random_bytes() از PHP 7 در هسته‌ی PHP هست و کار می‌کند.
+        // نتیجه: روی PHP 8.1 مرحله‌ی ۱ همیشه خطا می‌داد و چون خطی به نام
+        // extension=random اصلاً وجود نداشت، کاربر هیچ کاری نمی‌توانست بکند.
+        //
+        // بنابراین به‌جای نام، خودِ تابع/کلاس را بررسی می‌کنیم.
+        $capabilities = [
+            'pdo' => static fn (): bool => class_exists('PDO'),
+            'json' => static fn (): bool => function_exists('json_encode'),
+            'hash' => static fn (): bool => function_exists('hash_algos'),
+            'session' => static fn (): bool => function_exists('session_start'),
+            'random' => static fn (): bool => function_exists('random_bytes'),
+        ];
+
+        foreach ($capabilities as $ext => $probe) {
+            $ok = $probe();
+            $nameLoaded = extension_loaded($ext);
+            $detail = '';
+
+            if ($ok && !$nameLoaded) {
+                $detail = 'نیاز برآورده است. افزونه با این نام در این نسخه‌ی PHP ('
+                    . PHP_VERSION . ') تعریف نشده، اما تواناییِ مورد نیاز در هسته در دسترس است.';
+            }
+
+            $hint = '';
+            if (!$ok) {
+                $hint = 'تواناییِ مربوط به افزونه‌ی ' . $ext . ' در دسترس نیست. در php.ini'
+                    . ' خطِ extension=' . $ext . ' را از حالت کامنت خارج کنید'
+                    . ($ini !== false ? ' (فایل: ' . $ini . ')' : '')
+                    . '، سپس IIS را بازیابی (Recycle) کنید.';
+            }
+
             $checks[] = [
-                'name' => 'افزونه ' . $ext,
-                'ok' => $loaded,
-                'message' => $loaded ? 'نصب شده' : 'نصب نیست',
-                'detail' => '',
-                'hint' => $loaded ? '' : 'در php.ini خطِ extension=' . $ext . ' را فعال کنید.',
+                'name' => 'توانایی ' . $ext,
+                'ok' => $ok,
+                'message' => $ok ? 'در دسترس' : 'در دسترس نیست',
+                'detail' => $detail,
+                'hint' => $hint,
             ];
         }
 
         $mysql = extension_loaded('pdo_mysql');
         $sqlite = extension_loaded('pdo_sqlite');
         $drivers = class_exists('PDO') ? \PDO::getAvailableDrivers() : [];
-        $ini = php_ini_loaded_file();
         $checks[] = [
             'name' => 'افزونه pdo_mysql یا pdo_sqlite',
             'ok' => $mysql || $sqlite,
