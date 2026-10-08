@@ -67,9 +67,13 @@ if (is_file($real)) {
     $captured .= 'فایل یافت نشد: ' . $file;
 }
 
+// callbackِ ob_start محتوا را به $captured اضافه کرده و رشته‌ی خالی برمی‌گرداند.
+// بنابراین این‌جا نباید دوباره ob_get_contents() را به آن افزود، وگرنه خروجی
+// دو بار ضبط می‌شود (چیزی که با بررسی‌های includes دیده نمی‌شد اما خروجی‌های
+// JSON را خراب می‌کرد). ob_end_flush تضمین می‌کند callback برای بخشِ باقی‌مانده‌ی
+// بافر هم صدا زده شود.
 while (ob_get_level() > 0) {
-    $captured .= (string) ob_get_contents();
-    @ob_end_clean();
+    @ob_end_flush();
 }
 
 $activeSessionId = session_status() === PHP_SESSION_ACTIVE ? session_id() : '';

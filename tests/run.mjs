@@ -393,11 +393,94 @@ async function main() {
     authedSession = loginPost.session_id;
   }
 
-  for (const page of ['/admin/index.php', '/admin/apps.php', '/admin/users.php', '/admin/tokens.php', '/admin/audit.php', '/admin/account.php']) {
+  for (const page of ['/admin/index.php', '/admin/apps.php', '/admin/users.php', '/admin/tokens.php', '/admin/audit.php', '/admin/account.php', '/admin/docs.php']) {
     const res = await admin(runtime, page, { sessionId: authedSession });
     eq('بارگذاری ' + page + ' => 200', res.status, 200);
     check('خروجی معتبر ' + page, res.body.includes('<!doctype html>'));
   }
+
+  // ------------------------------------------------------------ مستنداتِ API
+  section('مستنداتِ API در پنل');
+
+  {
+    // مستندات از روی جدولِ مسیرهای واقعی ساخته می‌شود؛ اگر مسیری اضافه شود و
+    // توضیحش نوشته نشود، این تست خطا می‌دهد.
+    const out = await runtime.run(php([
+      "require '/sso/src/bootstrap.php';",
+      "$router = require '/sso/src/Api/routes.php';",
+      "$routes = $router->routes();",
+      "$missing = \\Sso\\Support\\ApiDocs::missing();",
+      "echo json_encode(['count' => count($routes), 'missing' => $missing], JSON_UNESCAPED_UNICODE);",
+    ]));
+    const marker = '=====SSO_TEST_RESULT=====';
+    const raw = out.includes(marker) ? out.slice(out.indexOf(marker) + marker.length) : out;
+    const decoded = JSON.parse(raw.trim().split('\n').filter(Boolean).pop());
+    check('همه‌ی مسیرهای API مستند شده‌اند', decoded.missing.length === 0,
+      JSON.stringify(decoded.missing));
+    check('تعداد مسیرهای مستندشده معقول است', decoded.count >= 25, JSON.stringify(decoded));
+  }
+
+  {
+    const res = await admin(runtime, '/admin/docs.php', { sessionId: authedSession });
+    eq('صفحه مستندات => 200', res.status, 200);
+    check('نشانی پایه در مستندات هست', res.body.includes('/api/v1'), res.body.slice(0, 400));
+    check('هشدار امنیتیِ رازِ اپ نمایش داده شده',
+      res.body.includes('رازِ اپلیکیشن را هرگز'), res.body.slice(0, 600));
+    check('نمونه‌کد PHP در مستندات هست', res.body.includes('class SsoClient'));
+    check('نمونه‌کد JavaScript در مستندات هست', res.body.includes('const BASE ='));
+    check('نمونه‌کد cURL در مستندات هست', res.body.includes('curl -X POST'));
+    check('جدول کدهای خطا نمایش داده شده', res.body.includes('invalid_credentials'));
+
+    // تک‌تکِ مسیرها باید در خروجی حضور داشته باشند
+    for (const path of ['/v1/health', '/v1/auth/register', '/v1/auth/login', '/v1/auth/refresh',
+      '/v1/auth/logout', '/v1/auth/introspect', '/v1/users', '/v1/users/{id}',
+      '/v1/me', '/v1/me/apps', '/v1/apps/me', '/v1/apps/me/stats']) {
+      check(`مسیر ${path} در مستندات هست`, res.body.includes(path.replace('{id}', '{id}')));
+    }
+  }
+
+  {
+    // مستندات نباید بدون ورود در دسترس باشد
+    const res = await admin(runtime, '/admin/docs.php', { sessionId });
+    check('مستندات بدون ورود هدایت می‌شود',
+      headerOf(res, 'Location')?.includes('/admin/login.php') === true, JSON.stringify(res.headers));
+  }
+
+  const downloads = {};
+  for (const exportName of ['postman', 'openapi']) {
+    const res = await admin(runtime, '/admin/docs.php', {
+      sessionId: authedSession,
+      query: { export: exportName },
+    });
+    eq(`خروجی ${exportName} => 200`, res.status, 200);
+    let parsed = null;
+    try { parsed = JSON.parse(res.body); } catch (e) { /* در ادامه بررسی می‌شود */ }
+    check(`خروجی ${exportName} JSON معتبر است`, parsed !== null, res.body.slice(0, 300));
+    downloads[exportName] = parsed;
+  }
+
+  check('مجموعه‌ی Postman پوشه دارد', (downloads.postman?.item || []).length >= 5,
+    JSON.stringify((downloads.postman?.item || []).map((f) => f.name)));
+  check('مجموعه‌ی Postman متغیرهای لازم را دارد',
+    ['base_url', 'api_key', 'api_secret', 'access_token']
+      .every((k) => (downloads.postman?.variable || []).some((v) => v.key === k)),
+    JSON.stringify(downloads.postman?.variable));
+  check('Postman شامل درخواستِ ورود است',
+    JSON.stringify(downloads.postman).includes('/auth/login'));
+
+  check('سند OpenAPI نسخه درست دارد', downloads.openapi?.openapi === '3.0.3',
+    JSON.stringify(downloads.openapi?.openapi));
+  check('سند OpenAPI همه‌ی مسیرها را دارد',
+    Object.keys(downloads.openapi?.paths || {}).length >= 20,
+    JSON.stringify(Object.keys(downloads.openapi?.paths || {}).length));
+  check('سند OpenAPI طرح‌های امنیتی را دارد',
+    ['AppKey', 'AppSecret', 'BearerAuth']
+      .every((k) => k in (downloads.openapi?.components?.securitySchemes || {})),
+    JSON.stringify(Object.keys(downloads.openapi?.components?.securitySchemes || {})));
+  check('سند OpenAPI پارامتر مسیر را استخراج کرده',
+    JSON.stringify(downloads.openapi?.paths?.['/v1/users/{id}']?.get?.parameters || [])
+      .includes('"in":"path"'),
+    JSON.stringify(downloads.openapi?.paths?.['/v1/users/{id}']?.get?.parameters || []));
 
   {
     const res = await admin(runtime, '/admin/user.php', { sessionId: authedSession, query: { id: userId } });

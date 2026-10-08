@@ -22,6 +22,7 @@ final class Layout
         ['key' => 'users', 'label' => 'کاربران', 'url' => '/admin/users.php'],
         ['key' => 'tokens', 'label' => 'توکن‌ها', 'url' => '/admin/tokens.php'],
         ['key' => 'audit', 'label' => 'رویدادها', 'url' => '/admin/audit.php'],
+        ['key' => 'docs', 'label' => 'مستندات', 'url' => '/admin/docs.php'],
     ];
 
     public static function begin(string $title, string $active = '', ?array $admin = null): void
