@@ -49,183 +49,8 @@ Page::run(static function (): void {
     }
 
     // ------------------------------------------------------- نمونه‌کدهای آماده
-    // با NOWDOC نوشته شده‌اند تا هیچ نیازی به فرار دادنِ کاراکترها نباشد.
-    $curlSample = str_replace('{API_BASE}', $apiBase, <<<'CURL'
-# ۱) ثبت‌نام کاربر
-curl -X POST "{API_BASE}/auth/register" \
-  -H "Content-Type: application/json" \
-  -H "X-Api-Key: YOUR_API_KEY" \
-  -H "X-Api-Secret: YOUR_API_SECRET" \
-  -d '{"email":"ali@example.com","password":"YekRamez123","full_name":"علی رضایی"}'
-
-# ۲) ورود
-curl -X POST "{API_BASE}/auth/login" \
-  -H "Content-Type: application/json" \
-  -H "X-Api-Key: YOUR_API_KEY" \
-  -H "X-Api-Secret: YOUR_API_SECRET" \
-  -d '{"email":"ali@example.com","password":"YekRamez123"}'
-
-# ۳) استفاده از توکن برای گرفتن اطلاعات کاربر
-curl -X GET "{API_BASE}/me" \
-  -H "Authorization: Bearer ACCESS_TOKEN"
-
-# ۴) وقتی توکن منقضی شد، با توکنِ تمدید یکی تازه بگیرید
-curl -X POST "{API_BASE}/auth/refresh" \
-  -H "Content-Type: application/json" \
-  -d '{"refresh_token":"REFRESH_TOKEN"}'
-CURL);
-
-    $phpSample = str_replace('{API_BASE}', $apiBase, <<<'PHPSAMPLE'
-<?php
-
-declare(strict_types=1);
-
-/**
- * یک کلاینتِ ساده برای سامانه احراز هویت.
- * این کلاس فقط از cURL استفاده می‌کند؛ هیچ وابستگیِ خارجی ندارد.
- */
-final class SsoClient
-{
-    public function __construct(
-        private string $base,      // مثال: {API_BASE}
-        private string $key,       // X-Api-Key
-        private string $secret     // X-Api-Secret
-    ) {
-    }
-
-    private function call(string $method, string $path, array $body = [], ?string $token = null): array
-    {
-        $headers = ['Accept: application/json'];
-
-        if ($token !== null) {
-            // درخواست به نیابت از کاربر
-            $headers[] = 'Authorization: Bearer ' . $token;
-        } else {
-            // درخواستِ سرور به سرور با کلیدِ اپلیکیشن
-            $headers[] = 'X-Api-Key: ' . $this->key;
-            $headers[] = 'X-Api-Secret: ' . $this->secret;
-        }
-        if ($body !== []) {
-            $headers[] = 'Content-Type: application/json';
-        }
-
-        $ch = curl_init($this->base . $path);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CUSTOMREQUEST  => $method,
-            CURLOPT_HTTPHEADER     => $headers,
-            CURLOPT_TIMEOUT        => 15,
-        ]);
-        if ($body !== []) {
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body, JSON_UNESCAPED_UNICODE));
-        }
-
-        $raw    = (string) curl_exec($ch);
-        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        $data = json_decode($raw, true);
-        if ($status < 200 || $status >= 300) {
-            throw new RuntimeException('SSO خطای ' . $status . ': ' . $raw);
-        }
-
-        return is_array($data) ? $data : [];
-    }
-
-    public function register(string $email, string $password, array $extra = []): array
-    {
-        return $this->call('POST', '/auth/register', $extra + [
-            'email' => $email,
-            'password' => $password,
-        ]);
-    }
-
-    public function login(string $email, string $password): array
-    {
-        return $this->call('POST', '/auth/login', [
-            'email' => $email,
-            'password' => $password,
-        ]);
-    }
-
-    public function me(string $token): array
-    {
-        return $this->call('GET', '/me', [], $token);
-    }
-
-    public function refresh(string $refreshToken): array
-    {
-        return $this->call('POST', '/auth/refresh', ['refresh_token' => $refreshToken]);
-    }
-
-    public function users(string $token = '', array $filters = []): array
-    {
-        $query = $filters === [] ? '' : '?' . http_build_query($filters);
-        return $this->call('GET', '/users' . $query);
-    }
-}
-
-// ---- استفاده
-$sso = new SsoClient('{API_BASE}', 'YOUR_API_KEY', 'YOUR_API_SECRET');
-
-// ورود؛ توکن‌ها را در نشستِ کاربرِ خودتان نگه دارید
-$tokens = $sso->login('ali@example.com', 'YekRamez123');
-
-// گرفتن اطلاعات کاربر با توکنِ دسترسی
-$user = $sso->me($tokens['access_token']);
-echo $user['user']['email'];
-
-// تمدید وقتی توکنِ دسترسی منقضی شد
-$again = $sso->refresh($tokens['refresh_token']);
-PHPSAMPLE);
-
-    $jsSample = str_replace('{API_BASE}', $apiBase, <<<'JSSAMPLE'
-// توجه: این کد برای «سرور» است (Node.js یا بک‌اند).
-// رازِ اپلیکیشن را هرگز در مرورگر یا اپلیکیشن موبایل قرار ندهید.
-
-const BASE = '{API_BASE}';
-const KEY = 'YOUR_API_KEY';
-const SECRET = 'YOUR_API_SECRET';
-
-async function sso(path, { method = 'GET', body, token } = {}) {
-  const headers = { Accept: 'application/json' };
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  } else {
-    headers['X-Api-Key'] = KEY;
-    headers['X-Api-Secret'] = SECRET;
-  }
-  if (body) headers['Content-Type'] = 'application/json';
-
-  const res = await fetch(BASE + path, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data.message || `خطا ${res.status}`);
-  }
-  return data;
-}
-
-// ۱) ورود
-const tokens = await sso('/auth/login', {
-  method: 'POST',
-  body: { email: 'ali@example.com', password: 'YekRamez123' },
-});
-
-// ۲) اطلاعات کاربر با توکنِ دسترسی
-const me = await sso('/me', { token: tokens.access_token });
-
-// ۳) تمدید
-const refreshed = await sso('/auth/refresh', {
-  method: 'POST',
-  body: { refresh_token: tokens.refresh_token },
-});
-JSSAMPLE);
+    // از ApiDocs می‌آیند تا نسخه‌ی داخل پنل و نسخه‌ی خروجیِ خط فرمان یکی باشند.
+    $samples = ApiDocs::filledSamples($apiBase);
 
     // ------------------------------------------------------------------ نمایش
     $groups = ApiDocs::groups();
@@ -336,13 +161,13 @@ JSSAMPLE);
                 </div>
 
                 <div class="docs-panel" data-tab-panel="curl">
-                    <?= $code($curlSample) ?>
+                    <?= $code($samples['curl']) ?>
                 </div>
                 <div class="docs-panel" data-tab-panel="php" hidden>
-                    <?= $code($phpSample) ?>
+                    <?= $code($samples['php']) ?>
                 </div>
                 <div class="docs-panel" data-tab-panel="js" hidden>
-                    <?= $code($jsSample) ?>
+                    <?= $code($samples['js']) ?>
                 </div>
             </div>
         </div>

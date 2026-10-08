@@ -1195,6 +1195,50 @@ async function main() {
       JSON.stringify(diagOut.slice(-1200)));
     check('جمع‌بندیِ گزارش چاپ شد', diagOut.includes('همه‌ی پیش‌نیازها برآورده شده‌اند'),
       JSON.stringify(diagOut.slice(-400)));
+
+    // ---- خروجیِ مستندات برای تحویل به برنامه‌نویس ----
+    {
+      const outDir = '/tmp/sso-docs-test';
+      const run = await cliInstallRuntime.run(php([
+        "$GLOBALS['argv'] = ['export-docs.php', '--out=" + outDir + "'];",
+        "require '/sso/tools/export-docs.php';",
+      ]));
+      check('export-docs.php اجرا می‌شود', run.includes('sso-docs.html'), JSON.stringify(run.slice(0, 400)));
+
+      let html = '';
+      let postman = '';
+      let openapi = '';
+      try {
+        html = Buffer.from(await cliInstallRuntime.php.readFile(outDir + '/sso-docs.html')).toString('utf8');
+        postman = Buffer.from(await cliInstallRuntime.php.readFile(outDir + '/sso-api.postman_collection.json')).toString('utf8');
+        openapi = Buffer.from(await cliInstallRuntime.php.readFile(outDir + '/sso-api.openapi.json')).toString('utf8');
+      } catch (e) {
+        // در ادامه با بررسی‌های خالی بودن مشخص می‌شود
+      }
+
+      check('فایل HTML ساخته شده', html.length > 5000, 'طول: ' + html.length);
+      check('HTML شامل نشانی پایه است', html.includes('/api/v1'));
+      check('HTML مستقل است (style دارد)', html.includes('<style>') && html.includes('</html>'));
+      check('HTML برای چاپ تنظیم شده', html.includes('@media print'));
+      check('HTML شامل نمونه‌کد PHP است', html.includes('class SsoClient'));
+      check('HTML شامل نمونه‌کد JavaScript است', html.includes('const BASE'));
+      check('HTML شامل هشدار امنیتی است', html.includes('هشدار امنیتی'));
+      check('HTML شامل جدول کدهای خطا است', html.includes('invalid_credentials'));
+      check('HTML همه‌ی مسیرها را دارد',
+        (html.match(/class="endpoint"/g) || []).length === 28,
+        'تعداد: ' + (html.match(/class="endpoint"/g) || []).length);
+
+      let pm = null;
+      let oa = null;
+      try { pm = JSON.parse(postman); } catch (e) { /* ادامه */ }
+      try { oa = JSON.parse(openapi); } catch (e) { /* ادامه */ }
+      check('فایل Postman JSON معتبر است', pm !== null, postman.slice(0, 200));
+      check('فایل OpenAPI JSON معتبر است', oa !== null, openapi.slice(0, 200));
+      check('فایل Postman پوشه دارد', (pm?.item || []).length >= 5);
+      check('فایل OpenAPI مسیرها را دارد', Object.keys(oa?.paths || {}).length >= 20);
+      check('فایل OpenAPI نشانی سرور را دارد', JSON.stringify(oa?.servers || []).length > 5,
+        JSON.stringify(oa?.servers || []));
+    }
   }
 
 

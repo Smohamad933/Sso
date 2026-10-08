@@ -11,6 +11,8 @@
 /storage/database/*
 !/storage/database/.gitkeep
 /storage/installed.lock
+/storage/export/*
+!/storage/export/.gitkeep
 
 # وابستگی‌های توسعه
 node_modules/
