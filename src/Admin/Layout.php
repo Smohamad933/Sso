@@ -41,6 +41,12 @@ final class Layout
         echo '  <meta name="viewport" content="width=device-width, initial-scale=1">' . "\n";
         echo '  <meta name="robots" content="noindex, nofollow">' . "\n";
         echo '  <meta name="referrer" content="same-origin">' . "\n";
+
+        // اجبارِ HTTPS و هدرهای امنیتیِ مرورگر (سامانه قرار است روی اینترنت باشد)
+        if (\Sso\Support\Security::enforceHttps()) {
+            return;
+        }
+        \Sso\Support\Security::sendHeaders(['X-Robots-Tag' => 'noindex, nofollow']);
         echo '  ' . Csrf::meta() . "\n";
         echo '  <title>' . e($title) . ' — ' . $appName . '</title>' . "\n";
         echo '  <link rel="stylesheet" href="' . e($assetBase . '/app.css?v=' . $version) . '">' . "\n";

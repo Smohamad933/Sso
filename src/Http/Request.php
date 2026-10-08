@@ -312,28 +312,55 @@ final class Request
 
     public function ip(): string
     {
-        $trusted = [];
-        $candidates = [
-            $this->server['REMOTE_ADDR'] ?? '0.0.0.0',
-        ];
+        $remote = (string) ($this->server['REMOTE_ADDR'] ?? '0.0.0.0');
 
-        $forwarded = $this->header('X-Forwarded-For');
-        if ($forwarded !== null) {
-            foreach (explode(',', $forwarded) as $part) {
-                $candidates[] = trim($part);
+        // امنیت: هدرهای X-Forwarded-For و X-Real-Ip را خودِ کلاینت هم می‌تواند
+        // بفرستد. اعتماد به آن‌ها فقط وقتی مجاز است که درخواست واقعاً از یک
+        // پروکسیِ مورد اعتمادِ ما رسیده باشد؛ در غیر این صورت هر کسی می‌تواند
+        // IP خود را جعل کند و از محدودیتِ نرخ، قفل شدنِ حساب و ثبتِ رویدادها
+        // فرار کند. (قبلاً این هدرها بدون شرط پذیرفته می‌شدند.)
+        if (self::fromTrustedProxy($remote)) {
+            foreach (['X-Forwarded-For', 'X-Real-Ip'] as $name) {
+                $value = $this->header($name);
+                if ($value === null) {
+                    continue;
+                }
+                foreach (explode(',', $value) as $part) {
+                    $part = trim($part);
+                    if ($part !== '' && filter_var($part, FILTER_VALIDATE_IP)) {
+                        return Str::ip($part);
+                    }
+                }
             }
         }
-        $real = $this->header('X-Real-Ip');
-        if ($real !== null) {
-            $candidates[] = trim($real);
+
+        if ($remote !== '' && filter_var($remote, FILTER_VALIDATE_IP)) {
+            return Str::ip($remote);
         }
 
-        foreach ($candidates as $candidate) {
-            if ($candidate !== '' && filter_var($candidate, FILTER_VALIDATE_IP)) {
-                return Str::ip($candidate);
-            }
-        }
         return '0.0.0.0';
+    }
+
+    /**
+     * آیا این درخواست از یکی از پروکسی‌های مورد اعتماد رسیده است؟
+     */
+    private static function fromTrustedProxy(string $remote): bool
+    {
+        $trusted = [];
+        if (\Sso\Core\App::isBooted()) {
+            $trusted = (array) \sso_config('security.trusted_proxies', []);
+        }
+
+        foreach ($trusted as $entry) {
+            if (!is_string($entry)) {
+                continue;
+            }
+            if (\Sso\Support\Security::cidrMatch($remote, $entry)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function userAgent(): string

@@ -14,7 +14,13 @@ require dirname(__DIR__) . '/src/bootstrap.php';
 
 use Sso\Data\Database;
 use Sso\Install\Installer;
+use Sso\Support\Security;
 use Sso\Support\Str;
+
+if (Security::enforceHttps()) {
+    return;
+}
+Security::sendHeaders(['X-Robots-Tag' => 'noindex, nofollow']);
 
 if (Installer::isInstalled() && !isset($_GET['force'])) {
     http_response_code(403);

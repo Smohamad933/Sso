@@ -100,6 +100,21 @@ final class App
                 'admin_session_idle_minutes' => 120,
                 'admin_ip_whitelist' => [],
                 'trusted_proxies' => [],
+
+                // روی اینترنتِ عمومی: هدایتِ HTTP به HTTPS
+                'force_https' => true,
+                'hsts_enabled' => true,
+                // اگر وب‌سرور پشتِ پروکسی معکوس است و می‌خواهید IP واقعیِ
+                // کلاینت از X-Forwarded-For خوانده شود، true کنید و
+                // trusted_proxies را پر کنید.
+                'trust_proxy' => false,
+
+                // ورودِ دو مرحله‌ای (TOTP) برای مدیران
+                'admin_2fa_required' => false,
+                'admin_2fa_issuer' => 'SSO',
+
+                // نشانی وب‌هوک برای هشدارِ رویدادهای حساس (خالی = غیرفعال)
+                'alert_webhook_url' => '',
             ],
         ];
     }

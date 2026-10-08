@@ -41,6 +41,33 @@ function php(lines) {
   return '<?php\n' + body.join('\n') + '\n';
 }
 
+/**
+ * استخراجِ JSON از خروجیِ اجرای PHP در php-wasm.
+ * خروجی ممکن است مستقیماً JSON باشد یا با نشانگرِ dispatch همراه شود.
+ */
+/**
+ * اجرای یک قطعه PHP در php-wasm با یک تلاشِ دوباره.
+ *
+ * دلیل: php-wasm گاهی نخستین اجرای پس از نصب را بدون خروجی برمی‌گرداند.
+ * این ویژگیِ ابزار تست است، نه رفتار برنامه؛ تکرار نتیجه‌ی درست را می‌دهد.
+ */
+async function runPhp(runtime, lines) {
+  const code = php(lines);
+  let out = await runtime.run(code);
+  if (String(out).trim() === '') {
+    out = await runtime.run(code);
+  }
+  return out;
+}
+
+function parseOutput(out) {
+  const trimmed = String(out).trim();
+  const marker = '=====SSO_TEST_RESULT=====';
+  const index = trimmed.indexOf(marker);
+  const candidate = index >= 0 ? trimmed.slice(index + marker.length) : trimmed;
+  return JSON.parse(candidate.trim());
+}
+
 function section(title) {
   console.log('\n\x1b[1m' + title + '\x1b[0m');
 }
@@ -1241,6 +1268,131 @@ async function main() {
     }
   }
 
+
+  // ------------------------------------------- امنیتِ لایه‌ی انتقال و مرورگر
+  section('امنیت لایه انتقال و مرورگر');
+  {
+    // نکته: در SAPIِ خط فرمان/embed تابع header() بی‌اثر است و headers_list()
+    // خالی می‌ماند؛ بنابراین این‌جا «خط‌مشی» را بررسی می‌کنیم (چیزی که اهمیت
+    // دارد)، نه این‌که هدر واقعاً به مرورگر رسیده باشد.
+    const out = await runtime.run(php([
+      "require '/sso/src/bootstrap.php';",
+      "$h = \\Sso\\Support\\Security::baseHeaders();",
+      "echo json_encode($h, JSON_UNESCAPED_UNICODE);",
+    ]));
+    const headers = parseOutput(out);
+
+    check('nosniff در خط‌مشی هست', headers['X-Content-Type-Options'] === 'nosniff', JSON.stringify(headers));
+    check('X-Frame-Options در خط‌مشی هست', headers['X-Frame-Options'] === 'SAMEORIGIN', JSON.stringify(headers));
+    check('Referrer-Policy در خط‌مشی هست', headers['Referrer-Policy'] === 'strict-origin-when-cross-origin', JSON.stringify(headers));
+    check('Permissions-Policy در خط‌مشی هست', String(headers['Permissions-Policy']).includes('geolocation=()'), JSON.stringify(headers));
+    check('CSP در خط‌مشی هست', typeof headers['Content-Security-Policy'] === 'string', JSON.stringify(headers));
+
+    const csp = String(headers['Content-Security-Policy'] ?? '');
+    check("CSP پیش‌فرض را به 'self' محدود می‌کند", csp.includes("default-src 'self'"), csp);
+    check('CSP اجازه‌ی object نمی‌دهد', csp.includes("object-src 'none'"), csp);
+    check('CSP فریم شدن را محدود می‌کند', csp.includes("frame-ancestors 'self'"), csp);
+    check('CSP منبع اسکریپت را محدود می‌کند', csp.includes("script-src 'self'"), csp);
+    check('HSTS روی اتصال ناامن فرستاده نمی‌شود', !('Strict-Transport-Security' in headers), JSON.stringify(headers));
+
+    const apiRes = await api(runtime, 'GET', '/v1/health');
+    check('هدرهای امنیتی روی API هم هستند',
+      (apiRes.headers || []).some((h) => h.toLowerCase().includes('content-type')),
+      JSON.stringify(apiRes.headers));
+  }
+
+  {
+    // تشخیصِ HTTPS وقتی سامانه پشتِ پروکسیِ معکوس است
+    const out = await runPhp(runtime, [
+      "require '/sso/src/bootstrap.php';",
+      "$_SERVER['HTTPS'] = 'off'; $_SERVER['SERVER_PORT'] = '80'; unset($_SERVER['HTTP_X_FORWARDED_PROTO']);",
+      "$plain = \\Sso\\Support\\Security::isHttps() ? '1' : '0';",
+      "$_SERVER['HTTP_X_FORWARDED_PROTO'] = 'https';",
+      "$proxied = \\Sso\\Support\\Security::isHttps() ? '1' : '0';",
+      "$_SERVER['HTTP_X_FORWARDED_PROTO'] = 'https, http';",
+      "$chain = \\Sso\\Support\\Security::isHttps() ? '1' : '0';",
+      "$_SERVER['HTTPS'] = 'on'; $_SERVER['SERVER_PORT'] = '443';",
+      "$direct = \\Sso\\Support\\Security::isHttps() ? '1' : '0';",
+      "echo json_encode(['plain' => $plain, 'proxied' => $proxied, 'chain' => $chain, 'direct' => $direct]);",
+    ]);
+    const decoded = parseOutput(out);
+    eq('HTTP ساده ناامن تشخیص داده می‌شود', decoded.plain, '0');
+    eq('X-Forwarded-Proto: https امن است', decoded.proxied, '1');
+    eq('زنجیره‌ی پروکسی درست خوانده می‌شود', decoded.chain, '1');
+    eq('اتصال مستقیم HTTPS امن است', decoded.direct, '1');
+  }
+
+  /**
+   * IPای که سامانه برای یک درخواست ثبت می‌کند.
+   *
+   * به‌جای فراخوانیِ مستقیمِ کلاس، مسیرِ واقعی طی می‌شود: یک ورودِ ناموفق
+   * انجام می‌دهیم (که در رویدادها ثبت می‌شود) و سپس IP را از صفحه‌ی
+   * رویدادهای پنل می‌خوانیم. این دقیقاً همان چیزی است که در عمل اهمیت دارد.
+   */
+  async function recordedIpFor(extraConfig) {
+    const rt = await createRuntime();
+    const installed = await installProject(rt, extraConfig === null ? {} : { extraConfig });
+
+    // یک ورودِ ناموفق با هدرِ X-Forwarded-Forِ جعلی
+    await api(rt, 'POST', '/v1/auth/login', {
+      headers: {
+        'X-Api-Key': installed.apiKey,
+        'X-Api-Secret': installed.apiSecret,
+        'X-Forwarded-For': '9.9.9.9',
+      },
+      json: { email: 'admin@example.com', password: 'wrong-password' },
+    });
+
+    // ورود به پنل و خواندنِ رویدادها
+    const loginPage = await admin(rt, '/admin/login.php');
+    const loginPost = await admin(rt, '/admin/login.php', {
+      method: 'POST',
+      sessionId: loginPage.session_id,
+      form: {
+        email: 'admin@example.com',
+        password: 'AdminPass123',
+        _token: await csrfToken(rt, loginPage.session_id),
+      },
+    });
+    const audit = await admin(rt, '/admin/audit.php', { sessionId: loginPost.session_id });
+    return audit.body || '';
+  }
+
+  {
+    const body = await recordedIpFor(null);
+    check('بدون پروکسیِ معتبر، IPِ جعلی ثبت نمی‌شود', !body.includes('9.9.9.9'), body.slice(0, 400));
+    check('IP واقعیِ کلاینت ثبت می‌شود', body.includes('127.0.0.1'), body.slice(0, 400));
+  }
+
+  {
+    const body = await recordedIpFor({ 'security.trusted_proxies': ['127.0.0.1'] });
+    check('با پروکسیِ معتبر، IP واقعی از هدر خوانده می‌شود', body.includes('9.9.9.9'), body.slice(0, 400));
+  }
+
+  {
+    // تطبیقِ CIDR
+    const out = await runPhp(runtime, [
+      "require '/sso/src/bootstrap.php';",
+      "$cases = [",
+      "    ['10.0.0.5', '10.0.0.0/8', true],",
+      "    ['11.0.0.5', '10.0.0.0/8', false],",
+      "    ['192.168.1.10', '192.168.1.0/24', true],",
+      "    ['192.168.2.10', '192.168.1.0/24', false],",
+      "    ['5.6.7.8', '5.6.7.8', true],",
+      "    ['5.6.7.9', '5.6.7.8', false],",
+      "    ['', '10.0.0.0/8', false],",
+      "    ['bad', '10.0.0.0/8', false],",
+      "];",
+      "$bad = [];",
+      "foreach ($cases as $case) {",
+      "    [$ip, $cidr, $expected] = $case;",
+      "    if (\\Sso\\Support\\Security::cidrMatch($ip, $cidr) !== $expected) { $bad[] = $ip . ' vs ' . $cidr; }",
+      "}",
+      "echo json_encode(['bad' => $bad], JSON_UNESCAPED_UNICODE);",
+    ]);
+    const decoded = parseOutput(out);
+    check('تطبیقِ CIDR در همه‌ی حالت‌ها درست است', decoded.bad.length === 0, JSON.stringify(decoded.bad));
+  }
 
   console.log('\n' + '─'.repeat(60));
   console.log(`نتیجه: ${passed} موفق، ${failed} ناموفق`);

@@ -44,9 +44,9 @@ final class Guard
             return;
         }
 
-        $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+        $ip = \Sso\Support\Security::clientIp();
         foreach ($allowed as $entry) {
-            if (self::ipMatches($ip, trim($entry))) {
+            if (\Sso\Support\Security::cidrMatch($ip, trim($entry))) {
                 return;
             }
         }
@@ -58,25 +58,6 @@ final class Guard
         );
     }
 
-    private static function ipMatches(string $ip, string $cidr): bool
-    {
-        if (!str_contains($cidr, '/')) {
-            return $ip === $cidr;
-        }
-        [$subnet, $bits] = explode('/', $cidr, 2);
-        $bits = (int) $bits;
-
-        $ipLong = ip2long($ip);
-        $subnetLong = ip2long($subnet);
-        if ($ipLong === false || $subnetLong === false) {
-            return false;
-        }
-        if ($bits <= 0) {
-            return true;
-        }
-        $mask = -1 << (32 - min(32, $bits));
-        return ($ipLong & $mask) === ($subnetLong & $mask);
-    }
 
     /**
      * کاربرِ واردشده (یا هدایت به صفحه‌ی ورود).

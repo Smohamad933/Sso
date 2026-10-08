@@ -16,6 +16,12 @@ require dirname(__DIR__, 2) . '/src/bootstrap.php';
 use Sso\Api\Kernel;
 use Sso\Core\App;
 use Sso\Http\Request;
+use Sso\Support\Security;
+
+if (Security::enforceHttps()) {
+    return;
+}
+Security::sendHeaders();
 
 App::boot();
 
